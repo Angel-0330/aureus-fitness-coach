@@ -1,5 +1,3 @@
-// Modelos de dominio compartidos por toda la aplicación.
-
 export type Role = "owner" | "secretary" | "trainer";
 export type PaymentStatus = "Al día" | "Pendiente" | "Por vencer";
 export type ViewName =
@@ -19,10 +17,14 @@ export type ViewName =
   | "Mi perfil";
 
 export type Account = {
-  id: number;
+  id: string;
   name: string;
   email: string;
-  password: string;
+  // La contraseña ya no se guarda ni se compara en el frontend: Supabase
+  // Auth la maneja de forma segura en el servidor. Este campo se mantiene
+  // opcional solo por compatibilidad temporal con el módulo "Equipo"
+  // (features/settings.tsx), que se migrará en el siguiente paso.
+  password?: string;
   role: Role;
   gym: string;
   initials: string;
