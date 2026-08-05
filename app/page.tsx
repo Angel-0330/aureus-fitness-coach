@@ -1,12 +1,11 @@
 "use client";
 
-// Punto de entrada: arranque, sesión activa y estado global del espacio de trabajo.
+// Punto de entrada: arranque, sesión activa (Supabase Auth) y estado global.
 import { useEffect, useState } from "react";
 import { AppShell } from "./aureus/app-shell";
 import { AuthScreen } from "./aureus/features/auth";
 import { SplashScreen } from "./aureus/components/shared";
 import {
-  DEMO_ACCOUNTS,
   INITIAL_CLIENTS,
   INITIAL_CLIENT_RECORDS,
   INITIAL_MEASUREMENTS,
@@ -16,11 +15,15 @@ import {
   INITIAL_STAFF,
   TRAINERS,
 } from "./aureus/data";
-import type { Account, StaffMember, WorkspaceData } from "./aureus/types";
+import type { Account, Role, StaffMember, WorkspaceData } from "./aureus/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
+// NOTA: clients, clientRecords, trainers, etc. TODAVÍA vienen de datos de
+// demostración (./aureus/data.ts). Ese es el siguiente paso de la
+// migración — por ahora solo la sesión/login es real.
 export default function Home() {
   const [booting, setBooting] = useState(true);
-  const [accounts, setAccounts] = useState<Account[]>(DEMO_ACCOUNTS);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceData>({
     clients: INITIAL_CLIENTS,
@@ -33,12 +36,91 @@ export default function Home() {
     sessions: INITIAL_SESSIONS,
     clientMessages: {},
   });
-  useEffect(() => { const timer = window.setTimeout(() => setBooting(false), 2100); return () => window.clearTimeout(timer); }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBooting(false), 2100);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [activeAccount]);
-  function createOwner(account: Account) { setAccounts((items) => [...items, account]); setActiveAccount(account); }
-  function createStaff(account: Account) { setAccounts((items) => [...items, account]); }
-  function updateStaffAccount(member: StaffMember) { setAccounts((items) => items.map((account) => account.email.toLowerCase() === member.email.toLowerCase() ? { ...account, role: member.role, active: member.status !== "Suspendido" } : account)); }
-  if (booting) return <SplashScreen />;
-  if (!activeAccount) return <AuthScreen accounts={accounts} onLogin={setActiveAccount} onCreate={createOwner} />;
-  return <AppShell account={activeAccount} workspace={workspace} onUpdateWorkspace={setWorkspace} onLogout={() => setActiveAccount(null)} onCreateStaff={createStaff} onUpdateStaffAccount={updateStaffAccount} />;
+
+  // Al cargar la página, revisa si ya existe una sesión de Supabase válida
+  // (por ejemplo, si la persona ya había iniciado sesión antes y no la
+  // cerró). Si el correo aún no ha sido confirmado o el perfil no existe
+  // todavía, se trata como "sin sesión" y se muestra el login.
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+
+    async function loadFromSession() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setActiveAccount(null);
+        setCheckingSession(false);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, name, email, role, status, initials, gyms(name)")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || profile.status !== "active") {
+        setActiveAccount(null);
+        setCheckingSession(false);
+        return;
+      }
+
+      setActiveAccount({
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role as Role,
+        // @ts-expect-error -- el join de Supabase devuelve un objeto anidado
+        gym: profile.gyms?.name ?? "",
+        initials: profile.initials,
+        active: true,
+      });
+      setCheckingSession(false);
+    }
+
+    loadFromSession();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setActiveAccount(null);
+      }
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    setActiveAccount(null);
+  }
+
+  // TODO (próximo paso — módulo "Equipo"): hoy esto solo actualiza la
+  // pantalla localmente. Falta conectar con Supabase Admin API para
+  // invitar/editar cuentas reales del personal.
+  function createStaff(_account: Account) {}
+  function updateStaffAccount(_member: StaffMember) {}
+
+  if (booting || checkingSession) return <SplashScreen />;
+  if (!activeAccount) return <AuthScreen onLogin={setActiveAccount} onCreate={setActiveAccount} />;
+  return (
+    <AppShell
+      account={activeAccount}
+      workspace={workspace}
+      onUpdateWorkspace={setWorkspace}
+      onLogout={handleLogout}
+      onCreateStaff={createStaff}
+      onUpdateStaffAccount={updateStaffAccount}
+    />
+  );
 }
+
