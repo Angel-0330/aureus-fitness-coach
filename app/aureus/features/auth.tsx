@@ -1,6 +1,6 @@
 "use client";
 
-// Autenticación, acceso y recuperación.
+// Autenticación, acceso y recuperación — ahora contra Supabase Auth real.
 import { FormEvent, useEffect, useState } from "react";
 
 import {
@@ -8,7 +8,6 @@ import {
   Building2,
   Check,
   CheckCircle2,
-  ChevronRight,
   Eye,
   EyeOff,
   LockKeyhole,
@@ -21,36 +20,91 @@ import { ROLE_META } from "../data";
 import type { Account, Role } from "../types";
 import { initials } from "../utils";
 import { Brand, ModalLayer } from "../components/shared";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-export function RecoveryModal({ accounts, initialEmail, onClose }: { accounts: Account[]; initialEmail: string; onClose: () => void }) {
+// Trae el perfil (rol, gimnasio, etc.) del usuario recién autenticado y lo
+// convierte al formato Account que usa el resto de la aplicación.
+async function loadAccountFromSession(): Promise<Account | null> {
+  const supabase = createSupabaseBrowserClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("id, name, email, role, status, initials, gyms(name)")
+    .eq("id", user.id)
+    .single();
+
+  if (error || !profile) return null;
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    role: profile.role as Role,
+    // @ts-expect-error -- el join de Supabase devuelve un objeto anidado
+    gym: profile.gyms?.name ?? "",
+    initials: profile.initials,
+    active: profile.status === "active",
+  };
+}
+
+export function RecoveryModal({ initialEmail, onClose }: { initialEmail: string; onClose: () => void }) {
   const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = email.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(normalized)) {
       setError("Escribe un correo válido.");
       return;
     }
-    if (!accounts.some((account) => account.email.toLowerCase() === normalized)) {
-      setError("No encontramos una cuenta con ese correo.");
-      return;
-    }
     setError("");
+    setSubmitting(true);
+    const supabase = createSupabaseBrowserClient();
+    // Por seguridad, siempre mostramos el mismo mensaje de confirmación
+    // exista o no una cuenta con ese correo — así nadie puede usar este
+    // formulario para averiguar qué correos están registrados.
+    await supabase.auth.resetPasswordForEmail(normalized, {
+      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/restablecer-contrasena` : undefined,
+    });
+    setSubmitting(false);
     setConfirmed(true);
   }
 
-  return <ModalLayer onClose={onClose}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal__heading"><div><span>RECUPERAR ACCESO</span><h2 id="recovery-title">Restablecer contraseña</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={19} /></button></div>{confirmed ? <div className="modal-success"><CheckCircle2 size={28} /><strong>Cuenta verificada</strong><p>La solicitud quedó preparada. En la versión conectada se enviará un enlace seguro al correo registrado.</p><button type="button" className="primary-button primary-button--inline" onClick={onClose}>Entendido</button></div> : <form onSubmit={submit}><p className="modal-copy">Escribe el correo de la cuenta. Esta demostración valida el registro sin mostrar ni cambiar contraseñas.</p><label className="form-field"><span className="form-field__label">Correo de acceso</span><span className="form-field__control"><Mail size={18} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@correo.com" autoFocus /></span></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal__actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button primary-button--inline" type="submit">Verificar cuenta</button></div></form>}</section></ModalLayer>;
+  return (
+    <ModalLayer onClose={onClose}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="recovery-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal__heading"><div><span>RECUPERAR ACCESO</span><h2 id="recovery-title">Restablecer contraseña</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={19} /></button></div>
+        {confirmed ? (
+          <div className="modal-success">
+            <CheckCircle2 size={28} />
+            <strong>Solicitud enviada</strong>
+            <p>Si existe una cuenta con ese correo, recibirás un enlace seguro para restablecer tu contraseña.</p>
+            <button type="button" className="primary-button primary-button--inline" onClick={onClose}>Entendido</button>
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <p className="modal-copy">Escribe el correo de tu cuenta y te enviaremos un enlace para restablecer tu contraseña.</p>
+            <label className="form-field"><span className="form-field__label">Correo de acceso</span><span className="form-field__control"><Mail size={18} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@correo.com" autoFocus /></span></label>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <div className="modal__actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button primary-button--inline" type="submit" disabled={submitting}>{submitting ? "Enviando..." : "Enviar enlace"}</button></div>
+          </form>
+        )}
+      </section>
+    </ModalLayer>
+  );
 }
 
 export function AuthScreen({
-  accounts,
   onLogin,
   onCreate,
 }: {
-  accounts: Account[];
   onLogin: (account: Account) => void;
   onCreate: (account: Account) => void;
 }) {
@@ -80,31 +134,50 @@ export function AuthScreen({
     setSubmitting(false);
   }
 
-  function login(event: FormEvent<HTMLFormElement>) {
+  async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    const account = accounts.find((item) => item.email.toLowerCase() === email.trim().toLowerCase());
-    if (!account) {
-      setError("No encontramos esa cuenta. Puedes crear un gimnasio o usar un acceso de demostración.");
-      return;
-    }
-    if (account.active === false) {
-      setError("Esta cuenta está suspendida. El dueño del gimnasio debe reactivarla.");
-      return;
-    }
-    if (account.password !== password) {
-      setError("La contraseña no coincide con esta cuenta.");
-      return;
-    }
-    if (remember) window.localStorage.setItem("aureus-remembered-email", account.email);
-    else window.localStorage.removeItem("aureus-remembered-email");
     setSubmitting(true);
-    window.setTimeout(() => onLogin(account), 650);
+
+    const supabase = createSupabaseBrowserClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (authError) {
+      setSubmitting(false);
+      // Mensaje genérico a propósito: no revelamos si falló por correo
+      // inexistente o por contraseña incorrecta (evita que alguien use el
+      // formulario para "adivinar" qué correos están registrados).
+      setError("Correo o contraseña incorrectos.");
+      return;
+    }
+
+    if (remember) window.localStorage.setItem("aureus-remembered-email", email.trim());
+    else window.localStorage.removeItem("aureus-remembered-email");
+
+    const account = await loadAccountFromSession();
+    setSubmitting(false);
+
+    if (!account) {
+      setError("Tu cuenta no tiene un perfil configurado. Contacta al dueño del gimnasio.");
+      await supabase.auth.signOut();
+      return;
+    }
+    if (!account.active) {
+      setError("Esta cuenta está suspendida. El dueño del gimnasio debe reactivarla.");
+      await supabase.auth.signOut();
+      return;
+    }
+
+    onLogin(account);
   }
 
-  function createAccount(event: FormEvent<HTMLFormElement>) {
+  async function createAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
     if (name.trim().length < 3 || gym.trim().length < 3 || !/^\S+@\S+\.\S+$/.test(createEmail)) {
       setError("Completa tu nombre, el gimnasio y un correo válido.");
       return;
@@ -117,29 +190,59 @@ export function AuthScreen({
       setError("Las contraseñas no coinciden.");
       return;
     }
-    if (accounts.some((item) => item.email.toLowerCase() === createEmail.trim().toLowerCase())) {
-      setError("Ya existe una cuenta con ese correo.");
+
+    setSubmitting(true);
+    const supabase = createSupabaseBrowserClient();
+
+    // 1. Crear el gimnasio (tenant) en el servidor.
+    const gymResponse = await fetch("/api/gyms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gymName: gym.trim() }),
+    });
+    const gymData = await gymResponse.json().catch(() => null);
+
+    if (!gymResponse.ok || !gymData?.gymId) {
+      setSubmitting(false);
+      setError(gymData?.error ?? "No se pudo crear el gimnasio. Intenta de nuevo.");
       return;
     }
-    const account: Account = {
-      id: Date.now(),
-      name: name.trim(),
+
+    // 2. Crear el usuario dueño, enlazado a ese gimnasio. El perfil se crea
+    //    solo, automáticamente, por un trigger en la base de datos.
+    const { error: signUpError } = await supabase.auth.signUp({
       email: createEmail.trim(),
       password,
-      role: "owner",
-      gym: gym.trim(),
-      initials: initials(name),
-    };
-    setSubmitting(true);
-    window.setTimeout(() => onCreate(account), 700);
-  }
+      options: {
+        data: {
+          gym_id: gymData.gymId,
+          name: name.trim(),
+          role: "owner",
+        },
+      },
+    });
 
-  function fillDemoAccess(role: Role) {
-    const account = accounts.find((item) => item.role === role);
-    if (!account) return;
-    setEmail(account.email);
-    setPassword(account.password);
-    setError("");
+    if (signUpError) {
+      setSubmitting(false);
+      setError(
+        signUpError.message.includes("already registered")
+          ? "Ya existe una cuenta con ese correo."
+          : "No se pudo crear la cuenta. Intenta de nuevo."
+      );
+      return;
+    }
+
+    const account = await loadAccountFromSession();
+    setSubmitting(false);
+
+    if (!account) {
+      // Si tu proyecto de Supabase pide confirmar el correo antes de dar
+      // sesión, aquí no habrá cuenta todavía — mostramos ese caso.
+      setError("Revisa tu correo para confirmar la cuenta antes de continuar.");
+      return;
+    }
+
+    onCreate(account);
   }
 
   return (
@@ -181,7 +284,7 @@ export function AuthScreen({
 
           {mode === "login" ? (
             <form onSubmit={login} noValidate>
-              <label className="form-field"><span className="form-field__label">Correo o usuario</span><span className="form-field__control"><Mail size={18} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@correo.com" autoComplete="email" /></span></label>
+              <label className="form-field"><span className="form-field__label">Correo</span><span className="form-field__control"><Mail size={18} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@correo.com" autoComplete="email" /></span></label>
               <label className="form-field"><span className="form-field__label">Contraseña</span><span className="form-field__control"><LockKeyhole size={18} /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" autoComplete="current-password" /><button type="button" className="icon-button icon-button--field" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
               <div className="form-options"><label className="check-control"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span><Check size={13} /></span>Recordarme</label><button type="button" className="text-button" onClick={() => setRecoveryOpen(true)}>¿Olvidaste tu contraseña?</button></div>
               {error && <p className="form-error" role="alert">{error}</p>}
@@ -203,24 +306,13 @@ export function AuthScreen({
             </form>
           )}
 
-          {mode === "login" && (
-            <div className="demo-roles">
-              <div className="demo-roles__heading"><span>ACCESOS DE DEMOSTRACIÓN</span><small>Contraseña: Aureus26</small></div>
-              <div className="demo-roles__grid">
-                {(Object.keys(ROLE_META) as Role[]).map((role) => {
-                  const meta = ROLE_META[role];
-                  const Icon = meta.icon;
-                  return <button type="button" key={role} onClick={() => fillDemoAccess(role)}><Icon size={17} /><span><strong>{meta.label}</strong><small>Completar acceso</small></span><ChevronRight size={14} /></button>;
-                })}
-              </div>
-            </div>
-          )}
-
           <div className="security-note"><ShieldCheck size={18} /><div><strong>Cada persona ve lo que necesita</strong><span>Accesos diferenciados para dueño, recepción y entrenadores.</span></div></div>
         </div>
         <p className="login-panel__legal">© 2026 Aureus Fitness Coach · Entrena. Gestiona. Evoluciona.</p>
       </section>
-      {recoveryOpen && <RecoveryModal accounts={accounts} initialEmail={email} onClose={() => setRecoveryOpen(false)} />}
+      {recoveryOpen && <RecoveryModal initialEmail={email} onClose={() => setRecoveryOpen(false)} />}
     </main>
   );
 }
+
+
