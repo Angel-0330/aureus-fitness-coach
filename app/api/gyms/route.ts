@@ -38,9 +38,10 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
-  if (error || !data) {
-    return Response.json({ error: "No se pudo crear el gimnasio. Intenta de nuevo." }, { status: 500 });
-  }
+if (error || !data) {
+  console.error("Error al crear gimnasio en Supabase:", error);
+  return Response.json({ error: "No se pudo crear el gimnasio. Intenta de nuevo." }, { status: 500 });
+}
 
   return Response.json({ gymId: data.id });
 }
