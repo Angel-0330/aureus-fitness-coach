@@ -62,8 +62,9 @@ import {
 import { ClientRecordDetail } from "./features/records";
 import { AddStaffModal, SettingsModal } from "./features/settings";
 import { ProgressView, RoutinesView } from "./features/training";
+import { markClientPaidInSupabase } from "@/lib/clients-data";
 
-export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCreateStaff, onUpdateStaffAccount }: { account: Account; workspace: WorkspaceData; onUpdateWorkspace: (updater: (current: WorkspaceData) => WorkspaceData) => void; onLogout: () => void; onCreateStaff: (account: Account) => void; onUpdateStaffAccount: (member: StaffMember) => void }) {
+export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCreateStaff, onUpdateStaffAccount, clientIdMap }: { account: Account; workspace: WorkspaceData; onUpdateWorkspace: (updater: (current: WorkspaceData) => WorkspaceData) => void; onLogout: () => void; onCreateStaff: (account: Account) => void; onUpdateStaffAccount: (member: StaffMember) => void; clientIdMap?: Record<number, string> }) {
   const [view, setView] = useState<ViewName>(START_VIEW[account.role]);
   const [viewHistory, setViewHistory] = useState<ViewName[]>([]);
   const { clients, clientRecords, trainers, measurements, staff, plans, sessions } = workspace;
@@ -177,7 +178,21 @@ export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCr
     setMenuOpen(false);
     setShowNotifications(false);
   }
-  function markPaid(id: number) { setClients((items) => items.map((client) => client.id === id ? { ...client, payment: "Al día" as PaymentStatus, nextDue: "22 ago." } : client)); setSelectedClient((client) => client?.id === id ? { ...client, payment: "Al día", nextDue: "22 ago." } : client); notify("Mensualidad marcada como pagada."); }
+  async function markPaid(id: number) {
+    const realClientId = clientIdMap?.[id];
+    let nextDueLabel = "22 ago.";
+    if (realClientId) {
+      try {
+        nextDueLabel = await markClientPaidInSupabase(realClientId);
+      } catch {
+        notify("No se pudo confirmar el pago. Intenta de nuevo.");
+        return;
+      }
+    }
+    setClients((items) => items.map((client) => client.id === id ? { ...client, payment: "Al día" as PaymentStatus, nextDue: nextDueLabel } : client));
+    setSelectedClient((client) => client?.id === id ? { ...client, payment: "Al día", nextDue: nextDueLabel } : client);
+    notify("Mensualidad marcada como pagada.");
+  }
   function saveMeasurement(record: MeasurementRecord) { setMeasurements((items) => { const saved = record.id === 0 ? { ...record, id: items.reduce((highest, item) => Math.max(highest, item.id), 0) + 1 } : record; return items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [saved, ...items]; }); setClients((items) => items.map((client) => client.id === record.clientId ? { ...client, lastUpdate: "Ahora" } : client)); notify("Registro de medidas guardado correctamente."); }
   function savePlan(plan: GymPlan) { const creating = plan.id === 0; setPlans((items) => { const saved = creating ? { ...plan, id: items.reduce((highest, item) => Math.max(highest, item.id), 0) + 1 } : plan; return items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [...items, saved]; }); notify(creating ? "Plan creado correctamente." : "Plan actualizado correctamente."); }
   function saveSession(session: AgendaSession) { const creating = session.id === 0; setSessions((items) => { const saved = creating ? { ...session, id: items.reduce((highest, item) => Math.max(highest, item.id), 0) + 1 } : session; return items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [...items, saved]; }); notify(creating ? "Sesión añadida a la agenda." : "Sesión actualizada correctamente."); }
