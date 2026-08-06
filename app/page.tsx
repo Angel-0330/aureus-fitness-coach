@@ -17,14 +17,18 @@ import {
 } from "./aureus/data";
 import type { Account, Role, StaffMember, WorkspaceData } from "./aureus/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { fetchClientsForAccount, type ClientIdMap } from "@/lib/clients-data";
 
-// NOTA: clients, clientRecords, trainers, etc. TODAVÍA vienen de datos de
-// demostración (./aureus/data.ts). Ese es el siguiente paso de la
-// migración — por ahora solo la sesión/login es real.
+// NOTA: clientRecords, trainers, measurements, etc. TODAVÍA vienen de datos
+// de demostración (./aureus/data.ts) — esos módulos se migrarán en los
+// siguientes pasos. La sesión/login y la LISTA DE CLIENTES ya son reales.
 export default function Home() {
   const [booting, setBooting] = useState(true);
   const [checkingSession, setCheckingSession] = useState(true);
   const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  // Traduce el id numérico local de cada cliente (el que usa el resto de
+  // la app) a su UUID real en Supabase — ver lib/clients-data.ts.
+  const [clientIdMap, setClientIdMap] = useState<ClientIdMap>({});
   const [workspace, setWorkspace] = useState<WorkspaceData>({
     clients: INITIAL_CLIENTS,
     clientRecords: INITIAL_CLIENT_RECORDS,
@@ -64,7 +68,7 @@ export default function Home() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("id, name, email, role, status, initials, gyms(name)")
+        .select("id, name, email, role, status, initials, gym_id, gyms(name)")
         .eq("id", user.id)
         .single();
 
@@ -81,6 +85,7 @@ export default function Home() {
         role: profile.role as Role,
         // @ts-expect-error -- el join de Supabase devuelve un objeto anidado
         gym: profile.gyms?.name ?? "",
+        gymId: profile.gym_id,
         initials: profile.initials,
         active: true,
       });
@@ -97,6 +102,26 @@ export default function Home() {
 
     return () => subscription.subscription.unsubscribe();
   }, []);
+
+  // En cuanto sabemos quién inició sesión (y a qué gimnasio pertenece),
+  // reemplazamos la lista de clientes de prueba por los clientes reales
+  // guardados en Supabase.
+  useEffect(() => {
+    if (!activeAccount?.gymId) return;
+    let cancelled = false;
+
+    async function loadClients() {
+      const { clients, idMap } = await fetchClientsForAccount(activeAccount.gymId!);
+      if (cancelled) return;
+      setClientIdMap(idMap);
+      setWorkspace((current) => ({ ...current, clients }));
+    }
+
+    loadClients();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAccount?.gymId]);
 
   async function handleLogout() {
     const supabase = createSupabaseBrowserClient();
@@ -120,7 +145,7 @@ export default function Home() {
       onLogout={handleLogout}
       onCreateStaff={createStaff}
       onUpdateStaffAccount={updateStaffAccount}
+      clientIdMap={clientIdMap}
     />
   );
 }
-
