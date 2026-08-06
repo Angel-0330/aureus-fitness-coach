@@ -1,3 +1,5 @@
+// Modelos de dominio compartidos por toda la aplicación.
+
 export type Role = "owner" | "secretary" | "trainer";
 export type PaymentStatus = "Al día" | "Pendiente" | "Por vencer";
 export type ViewName =
@@ -27,6 +29,9 @@ export type Account = {
   password?: string;
   role: Role;
   gym: string;
+  // Identificador real del gimnasio en la base de datos — necesario para
+  // consultar clientes, pagos, etc. de este gimnasio específicamente.
+  gymId?: string;
   initials: string;
   active?: boolean;
 };
