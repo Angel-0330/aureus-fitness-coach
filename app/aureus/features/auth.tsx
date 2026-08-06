@@ -33,7 +33,7 @@ async function loadAccountFromSession(): Promise<Account | null> {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, name, email, role, status, initials, gyms(name)")
+    .select("id, name, email, role, status, initials, gym_id, gyms(name)")
     .eq("id", user.id)
     .single();
 
@@ -46,6 +46,7 @@ async function loadAccountFromSession(): Promise<Account | null> {
     role: profile.role as Role,
     // @ts-expect-error -- el join de Supabase devuelve un objeto anidado
     gym: profile.gyms?.name ?? "",
+    gymId: profile.gym_id,
     initials: profile.initials,
     active: profile.status === "active",
   };
@@ -314,5 +315,6 @@ export function AuthScreen({
     </main>
   );
 }
+
 
 
