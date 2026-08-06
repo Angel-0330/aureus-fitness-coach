@@ -15,7 +15,6 @@ import {
   WalletCards,
 } from "lucide-react";
 import type {
-  Account,
   AgendaSession,
   Client,
   ClientRecord,
@@ -28,11 +27,7 @@ import type {
   ViewName,
 } from "./types";
 
-export const DEMO_ACCOUNTS: Account[] = [
-  { id: 1, name: "Ángel Ortega", email: "dueno@aureus.fit", password: "Aureus26", role: "owner", gym: "Aureus Performance Gym", initials: "AO" },
-  { id: 2, name: "Laura Díaz", email: "secretaria@aureus.fit", password: "Aureus26", role: "secretary", gym: "Aureus Performance Gym", initials: "LD" },
-  { id: 3, name: "Marco Salas", email: "entrenador@aureus.fit", password: "Aureus26", role: "trainer", gym: "Aureus Performance Gym", initials: "MS" },
-];
+
 
 export const TRAINERS: Trainer[] = [
   { id: 1, name: "Marco Salas", initials: "MS", specialty: "Fuerza y acondicionamiento", preparation: "Lic. Ciencias del Deporte", experience: "8 años de experiencia", availability: "Lun. a sáb. · Mañana", openSpots: 4, clients: 12, rating: "4.9", color: "amber", bio: "Ayuda a personas de todos los niveles a ganar fuerza con una técnica segura y objetivos sostenibles.", certifications: ["Entrenamiento de fuerza", "Primeros auxilios deportivos", "Nutrición aplicada al ejercicio"], email: "marco@aureus.fit", phone: "6200-1401", instagram: "@marcosalas.fit" },
