@@ -63,8 +63,10 @@ import { ClientRecordDetail } from "./features/records";
 import { AddStaffModal, SettingsModal } from "./features/settings";
 import { ProgressView, RoutinesView } from "./features/training";
 import { markClientPaidInSupabase } from "@/lib/clients-data";
+import { registerNewClient } from "@/lib/client-onboarding";
+import { initials } from "./utils";
 
-export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCreateStaff, onUpdateStaffAccount, clientIdMap }: { account: Account; workspace: WorkspaceData; onUpdateWorkspace: (updater: (current: WorkspaceData) => WorkspaceData) => void; onLogout: () => void; onCreateStaff: (account: Account) => void; onUpdateStaffAccount: (member: StaffMember) => void; clientIdMap?: Record<number, string> }) {
+export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCreateStaff, onUpdateStaffAccount, clientIdMap, onClientCreated }: { account: Account; workspace: WorkspaceData; onUpdateWorkspace: (updater: (current: WorkspaceData) => WorkspaceData) => void; onLogout: () => void; onCreateStaff: (account: Account) => void; onUpdateStaffAccount: (member: StaffMember) => void; clientIdMap?: Record<number, string>; onClientCreated?: (localId: number, realId: string) => void }) {
   const [view, setView] = useState<ViewName>(START_VIEW[account.role]);
   const [viewHistory, setViewHistory] = useState<ViewName[]>([]);
   const { clients, clientRecords, trainers, measurements, staff, plans, sessions } = workspace;
@@ -197,11 +199,29 @@ export function AppShell({ account, workspace, onUpdateWorkspace, onLogout, onCr
   function savePlan(plan: GymPlan) { const creating = plan.id === 0; setPlans((items) => { const saved = creating ? { ...plan, id: items.reduce((highest, item) => Math.max(highest, item.id), 0) + 1 } : plan; return items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [...items, saved]; }); notify(creating ? "Plan creado correctamente." : "Plan actualizado correctamente."); }
   function saveSession(session: AgendaSession) { const creating = session.id === 0; setSessions((items) => { const saved = creating ? { ...session, id: items.reduce((highest, item) => Math.max(highest, item.id), 0) + 1 } : session; return items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [...items, saved]; }); notify(creating ? "Sesión añadida a la agenda." : "Sesión actualizada correctamente."); }
   function saveClientRecord(record: ClientRecord) { setClientRecords((items) => items.some((item) => item.clientId === record.clientId) ? items.map((item) => item.clientId === record.clientId ? record : item) : [...items, record]); notify("Expediente actualizado correctamente."); }
-  function addClient(client: Client) {
+  async function addClient(input: { name: string; email: string; phone: string; goal: string; plan: string; price: number }) {
+    const ownerName = account.role === "owner" ? account.name : workspace.staff.find((member) => member.role === "owner")?.name ?? "Dueño";
+    const occupiedTimes = new Set(workspace.sessions.map((session) => session.time));
+    const medicalTime = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30"].find((time) => !occupiedTimes.has(time)) ?? "16:00";
+
+    const newLocalId = workspace.clients.reduce((highest, item) => Math.max(highest, item.id), 0) + 1;
+    const client: Client = { id: newLocalId, name: input.name, initials: initials(input.name), email: input.email, phone: input.phone, plan: input.plan, price: input.price, trainer: "Pendiente de evaluación médica", goal: input.goal, progress: 0, payment: "Pendiente", nextDue: "Hoy", sessions: 0, lastUpdate: "Recién registrado", color: "amber" };
+
+    if (account.gymId) {
+      try {
+        const realId = await registerNewClient(
+          account.gymId,
+          { name: input.name, email: input.email, phone: input.phone, goal: input.goal, planName: input.plan, price: input.price },
+          medicalTime
+        );
+        onClientCreated?.(newLocalId, realId);
+      } catch {
+        notify("No se pudo guardar el cliente en la base de datos. Intenta de nuevo.");
+        return;
+      }
+    }
+
     onUpdateWorkspace((current) => {
-      const ownerName = account.role === "owner" ? account.name : current.staff.find((member) => member.role === "owner")?.name ?? "Dueño";
-      const occupiedTimes = new Set(current.sessions.map((session) => session.time));
-      const medicalTime = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30"].find((time) => !occupiedTimes.has(time)) ?? "16:00";
       const record = createClientRecord(client, { medicalAppointmentTime: medicalTime });
       const medicalAppointment: AgendaSession = {
         id: current.sessions.reduce((highest, session) => Math.max(highest, session.id), 0) + 1,
