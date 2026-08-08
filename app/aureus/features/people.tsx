@@ -36,7 +36,7 @@ import type {
 import { initials } from "../utils";
 import { ModalLayer, PaymentPill } from "../components/shared";
 
-export function RegistrationWizard({ plans, onAdd, onCancel }: { plans: GymPlan[]; onAdd: (client: Client) => void; onCancel: () => void }) {
+export function RegistrationWizard({ plans, onAdd, onCancel }: { plans: GymPlan[]; onAdd: (input: { name: string; email: string; phone: string; goal: string; plan: string; price: number }) => void; onCancel: () => void }) {
   const availablePlans = plans.filter((item) => item.active);
   const initialPlan = availablePlans.find((item) => item.featured)?.name ?? availablePlans[0]?.name ?? "";
   const [step, setStep] = useState(1);
@@ -56,7 +56,7 @@ export function RegistrationWizard({ plans, onAdd, onCancel }: { plans: GymPlan[
   }
 
   function finish() {
-    onAdd({ id: Date.now(), name: name.trim(), initials: initials(name), email: email.trim(), phone: phone.trim(), plan, price: planPrices[plan] ?? 0, trainer: "Pendiente de evaluación médica", goal, progress: 0, payment: "Pendiente", nextDue: "Hoy", sessions: 0, lastUpdate: "Recién registrado", color: "amber" });
+    onAdd({ name: name.trim(), email: email.trim(), phone: phone.trim(), goal, plan, price: planPrices[plan] ?? 0 });
   }
 
   return (
@@ -168,3 +168,4 @@ export function TrainerDetail({ trainer, clients, onClose, onClient }: { trainer
     </ModalLayer>
   );
 }
+
