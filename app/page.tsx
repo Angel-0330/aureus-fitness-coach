@@ -146,6 +146,7 @@ export default function Home() {
       onCreateStaff={createStaff}
       onUpdateStaffAccount={updateStaffAccount}
       clientIdMap={clientIdMap}
+      onClientCreated={(localId, realId) => setClientIdMap((current) => ({ ...current, [localId]: realId }))}
     />
   );
 }
