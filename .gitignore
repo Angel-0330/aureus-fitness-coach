@@ -1,0 +1,28 @@
+# Secretos — NUNCA subir a GitHub
+.env
+.env.local
+.env*.local
+
+# Dependencias (se reinstalan solas con npm install)
+node_modules
+
+# Archivos generados al construir el proyecto
+build
+dist
+.next
+.vinext
+.wrangler
+.open-next
+
+# Sistema operativo y editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Registros
+*.log
+npm-debug.log*
+
+# Copias de respaldo que hicimos durante la migración
+*.viejo
+*.bak
